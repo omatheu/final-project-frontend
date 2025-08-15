@@ -1,0 +1,27 @@
+# Dockerfile para desenvolvimento do Next.js (sem standalone)
+FROM node:18-alpine
+
+# Instalar dependências do sistema
+RUN apk add --no-cache libc6-compat
+
+# Definir diretório de trabalho
+WORKDIR /app
+
+# Copiar arquivos de dependências
+COPY package.json package-lock.json* pnpm-lock.yaml* ./
+
+# Instalar dependências
+RUN \
+  if [ -f package-lock.json ]; then npm ci; \
+  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm install; \
+  else echo "Lockfile not found." && exit 1; \
+  fi
+
+# Copiar código fonte
+COPY . .
+
+# Expor porta
+EXPOSE 3000
+
+# Comando para desenvolvimento
+CMD ["npm", "run", "dev"] 

@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  visagio-rag-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - DATABASE_PATH=${DATABASE_PATH:-Bases_VAI - oficial real.db}
+    volumes:
+      - ./Bases_VAI - oficial real.db:/app/Bases_VAI - oficial real.db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s 

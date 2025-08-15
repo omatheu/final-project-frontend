@@ -34,7 +34,7 @@ export function MessageInput({ onSendMessage, isLoading }: MessageInputProps) {
           <Input
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Ask me something"
+            placeholder="Pergunte sobre dados de telemetria (ex: Qual foi o tempo total de uso do motor por chassi?)"
             className="pr-20 bg-background border-input text-white placeholder:text-white/70"
             disabled={isLoading}
           />

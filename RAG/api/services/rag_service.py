@@ -15,6 +15,7 @@ from langchain.agents import Tool
 
 from config.settings import settings
 import os
+from datetime import datetime
 
 def simple_similarity(str1: str, str2: str) -> float:
     """Função simples de similaridade para substituir jellyfish temporariamente"""
@@ -265,48 +266,61 @@ Final Answer: <<se quiser encerrar, use este campo como resposta final>>
         return shots
     
     def _initialize_agent(self):
-        """Inicializa o agente LangChain"""
+        """Inicializa o agente RAG"""
         try:
-            # Criar o toolkit SQL
-            sql_toolkit = SQLDatabaseToolkit(db=self.db, llm=self.llm)
+            print("🔧 Inicializando agente RAG...")
             
-            # Criar a calculadora
-            math_chain = LLMMathChain.from_llm(llm=self.llm, verbose=True)
-            math_tool = Tool(
-                name="Calculadora Matemática",
-                func=math_chain.run,
-                description="""
-Use esta ferramenta para realizar operações aritméticas.
-Use se precisar realizar alguma operação matemática não suportada por SQLite em algum conjunto de dados.
-A entrada é uma expressão aritmética a ser resolvida.
-A saída é o resultado do cálculo da expressão aritmética.
-"""
+            # Configurar o modelo Gemini
+            print("📝 Configurando modelo Gemini...")
+            llm = ChatGoogleGenerativeAI(
+                model=settings.model_name,
+                google_api_key=settings.google_api_key,
+                temperature=0.1,
+                max_output_tokens=2048
             )
+            print("✅ Modelo Gemini configurado")
             
-            # Criar o prompt personalizado
-            prompt_prefix = self._get_system_prompt("") + "\n\nUse as ferramentas disponíveis."
-            prompt_suffix = "\n\nPergunta: {input}\n{agent_scratchpad}"
+            # Configurar ferramentas
+            print("🔧 Configurando ferramentas...")
+            toolkit = SQLDatabaseToolkit(db=self.db, llm=llm)
+            tools = toolkit.get_tools()
+            print(f"✅ {len(tools)} ferramentas configuradas")
             
-            agent_prompt = PromptTemplate(
-                input_variables=["input", "agent_scratchpad"],
-                template=prompt_prefix + prompt_suffix
+            # Configurar o agente
+            print("🤖 Configurando agente...")
+            prompt = ZeroShotAgent.create_prompt(
+                tools,
+                prefix=self._get_system_prompt(""),
+                suffix="",
+                input_variables=["input", "agent_scratchpad"]
             )
-            
-            # Criar a LLMChain
-            llm_chain = LLMChain(llm=self.llm, prompt=agent_prompt)
+            print("✅ Prompt configurado")
             
             # Criar o agente
-            agent = ZeroShotAgent(llm_chain=llm_chain, tools=sql_toolkit.get_tools() + [math_tool])
+            print("🔗 Criando agente...")
+            self.agent = ZeroShotAgent(
+                llm_chain=LLMChain(llm=llm, prompt=prompt),
+                allowed_tools=[tool.name for tool in tools],
+                verbose=True
+            )
+            print("✅ Agente criado")
             
             # Criar o executor
+            print("⚙️ Configurando executor...")
             self.agent_executor = AgentExecutor.from_agent_and_tools(
-                agent=agent,
-                tools=sql_toolkit.get_tools() + [math_tool],
+                agent=self.agent,
+                tools=tools,
                 verbose=True,
+                max_iterations=5,
                 handle_parsing_errors=True
             )
+            print("✅ Executor configurado")
             
         except Exception as e:
+            print(f"❌ Erro detalhado na inicialização: {str(e)}")
+            print(f"   Tipo do erro: {type(e)}")
+            import traceback
+            print(f"   Traceback: {traceback.format_exc()}")
             raise RuntimeError(f"Erro ao inicializar agente: {str(e)}")
     
     def query(self, query_text: str) -> Dict[str, Any]:
@@ -314,16 +328,33 @@ A saída é o resultado do cálculo da expressão aritmética.
         start_time = time.time()
         
         try:
-            # Executar a consulta
-            response = self.agent_executor.invoke({
-                "input": query_text,
-                "agent_scratchpad": ""
-            })
+            print(f"🔍 Executando consulta: {query_text}")
+            print(f"🔧 Agente configurado: {self.agent_executor is not None}")
+            
+            if not self.agent_executor:
+                raise RuntimeError("Agente não foi inicializado corretamente")
+            
+            # Executar a consulta real
+            print("🚀 Invocando agente...")
+            try:
+                response = self.agent_executor.invoke({
+                    "input": query_text,
+                    "agent_scratchpad": ""
+                })
+                print(f"✅ Resposta do agente recebida: {type(response)}")
+                print(f"📝 Conteúdo da resposta: {response}")
+            except Exception as agent_error:
+                print(f"❌ Erro na invocação do agente: {str(agent_error)}")
+                print(f"   Tipo do erro: {type(agent_error)}")
+                import traceback
+                print(f"   Traceback do agente: {traceback.format_exc()}")
+                raise agent_error
             
             execution_time = time.time() - start_time
             
             # Extrair informações da resposta
             output = response.get("output", "")
+            print(f"📤 Output extraído: {output[:200]}...")
             
             # Tentar extrair a consulta SQL e resultado
             sql_query, result, justification = self._parse_agent_response(output)
@@ -334,47 +365,60 @@ A saída é o resultado do cálculo da expressão aritmética.
                 "result": result,
                 "justification": justification,
                 "execution_time": execution_time,
+                "timestamp": datetime.now().isoformat(),
                 "raw_response": output
             }
             
         except Exception as e:
-            execution_time = time.time() - start_time
+            print(f"❌ Erro na execução da consulta: {str(e)}")
+            print(f"   Tipo do erro: {type(e)}")
+            import traceback
+            print(f"   Traceback: {traceback.format_exc()}")
             raise RuntimeError(f"Erro na execução da consulta: {str(e)}")
     
     def _parse_agent_response(self, output: str) -> tuple:
         """Extrai informações estruturadas da resposta do agente"""
         try:
+            print(f"🔍 Parsing resposta do agente: {output[:200]}...")
+            
             # Buscar pela consulta SQL
+            sql_query = "Consulta não encontrada na resposta"
             if "```sql" in output and "```" in output:
                 sql_start = output.find("```sql") + 6
                 sql_end = output.find("```", sql_start)
-                sql_query = output[sql_start:sql_end].strip()
-            else:
-                sql_query = "Consulta não encontrada na resposta"
+                if sql_end > sql_start:
+                    sql_query = output[sql_start:sql_end].strip()
             
             # Buscar pela resposta
+            result = "Resultado não encontrado na resposta"
             if "### Resposta:" in output:
                 response_start = output.find("### Resposta:") + 13
                 response_end = output.find("###", response_start)
                 if response_end == -1:
                     response_end = len(output)
-                result = output[response_start:response_end].strip()
-            else:
-                result = "Resultado não encontrado na resposta"
+                if response_start < response_end:
+                    result = output[response_start:response_end].strip()
             
             # Buscar pela justificativa
+            justification = "Justificativa não encontrada na resposta"
             if "### Justificativa:" in output:
                 justification_start = output.find("### Justificativa:") + 18
                 justification_end = output.find("---", justification_start)
                 if justification_end == -1:
                     justification_end = len(output)
-                justification = output[justification_start:justification_end].strip()
-            else:
-                justification = "Justificativa não encontrada na resposta"
+                if justification_start < justification_end:
+                    justification = output[justification_start:justification_end].strip()
+            
+            print(f"✅ Parsing concluído:")
+            print(f"   SQL: {sql_query[:100]}...")
+            print(f"   Resultado: {result[:100]}...")
+            print(f"   Justificativa: {justification[:100]}...")
             
             return sql_query, result, justification
             
         except Exception as e:
+            print(f"❌ Erro no parsing: {str(e)}")
+            print(f"   Output recebido: {output[:200]}...")
             return "Erro ao processar resposta", "Erro", f"Erro no parsing: {str(e)}"
     
     def get_health_status(self) -> Dict[str, Any]:

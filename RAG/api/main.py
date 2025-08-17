@@ -84,6 +84,9 @@ async def execute_query(request: QueryRequest):
     try:
         start_time = time.time()
         
+        print(f"🌐 DEBUG: Request completo: {request}")
+        print(f"🔍 DEBUG: Query recebida: '{request.query}' (tipo: {type(request.query)})")
+        
         # Executar a consulta RAG
         result = rag_service.query(request.query)
         
@@ -192,6 +195,58 @@ async def get_database_schema():
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao obter esquema: {str(e)}")
+
+@app.get("/test/response-structure", tags=["Testing"])
+async def test_response_structure():
+    """Endpoint de teste para verificar a estrutura da resposta e detectar duplicações"""
+    try:
+        # Fazer uma consulta de teste
+        test_query = "Qual a categoria de telemetria mais utilizada?"
+        result = rag_service.query(test_query)
+        
+        # Verificar duplicações
+        analysis = {
+            "query": test_query,
+            "response_analysis": {
+                "sql_query_length": len(result.get("sql_query", "")),
+                "result_length": len(str(result.get("result", ""))),
+                "justification_length": len(result.get("justification", "")),
+                "raw_response_length": len(str(result.get("raw_response", "")))
+            },
+            "duplication_check": {
+                "result_vs_justification_similar": result.get("result", "") == result.get("justification", ""),
+                "result_vs_raw_similar": str(result.get("result", "")) in str(result.get("raw_response", "")),
+                "justification_vs_raw_similar": str(result.get("justification", "")) in str(result.get("raw_response", ""))
+            },
+            "recommendations": []
+        }
+        
+        # Gerar recomendações
+        if analysis["duplication_check"]["result_vs_justification_similar"]:
+            analysis["recommendations"].append("⚠️ Result e Justification estão muito similares")
+        
+        if analysis["duplication_check"]["result_vs_raw_similar"] and analysis["duplication_check"]["result_vs_raw_similar"]:
+            analysis["recommendations"].append("✅ Result está bem extraído da resposta bruta")
+        
+        if len(analysis["recommendations"]) == 0:
+            analysis["recommendations"].append("✅ Estrutura da resposta está adequada")
+        
+        return {
+            "test_result": "success",
+            "analysis": analysis,
+            "sample_response": {
+                "sql_query": result.get("sql_query", "")[:200] + "..." if len(result.get("sql_query", "")) > 200 else result.get("sql_query", ""),
+                "result_preview": str(result.get("result", ""))[:200] + "..." if len(str(result.get("result", ""))) > 200 else str(result.get("result", "")),
+                "justification_preview": str(result.get("justification", ""))[:200] + "..." if len(str(result.get("justification", ""))) > 200 else str(result.get("justification", ""))
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "test_result": "error",
+            "error": str(e),
+            "recommendations": ["❌ Erro ao executar teste de estrutura"]
+        }
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):

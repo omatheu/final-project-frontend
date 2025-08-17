@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -11,10 +11,20 @@ class QueryResponse(BaseModel):
     """Modelo para resposta da consulta"""
     query: str = Field(..., description="Pergunta original")
     sql_query: str = Field(..., description="Consulta SQL gerada")
-    result: Any = Field(..., description="Resultado da consulta")
-    justification: str = Field(..., description="Justificativa da consulta gerada")
+    result: Any = Field(..., description="Resultado da consulta (sem duplicações)")
+    justification: str = Field(..., description="Justificativa da consulta gerada (processo de pensamento)")
     execution_time: float = Field(..., description="Tempo de execução em segundos")
     timestamp: datetime = Field(default_factory=datetime.now, description="Timestamp da execução")
+    
+    class Config:
+        # Evitar duplicação de campos
+        extra = "forbid"
+        # Validar que result e justification não sejam idênticos
+        @validator('justification')
+        def validate_justification_not_duplicate(cls, v, values):
+            if 'result' in values and v == values['result']:
+                raise ValueError("Justification não pode ser idêntica ao result")
+            return v
 
 class ErrorResponse(BaseModel):
     """Modelo para respostas de erro"""

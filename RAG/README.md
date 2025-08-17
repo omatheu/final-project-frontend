@@ -221,6 +221,15 @@ allow_origins=["http://localhost:3000", "https://seudominio.com"]
 - Ajuste o `TEMPERATURE` para valores mais baixos
 - Considere usar um modelo mais rápido do Gemini
 
+### Dados Duplicados na Resposta
+- **PROBLEMA RESOLVIDO**: A API estava retornando conteúdo duplicado entre os campos `result` e `justification`
+- **SOLUÇÃO IMPLEMENTADA**: 
+  - Parsing inteligente da resposta da AI para extrair apenas o resultado final
+  - Separação clara entre processo de pensamento e resultado
+  - Validação Pydantic para evitar duplicações
+- **TESTE**: Use o endpoint `/test/response-structure` para verificar a estrutura da resposta
+- **SCRIPT**: Execute `python test_duplication.py` para análise detalhada
+
 ## 🤝 Contribuindo
 
 1. Fork o projeto

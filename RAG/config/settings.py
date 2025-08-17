@@ -1,9 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from pathlib import Path
 import os
 from typing import Optional
 
 class Settings(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+    
     # API Settings
     api_title: str = "Visagio RAG API"
     api_version: str = "1.0.0"
